@@ -1,0 +1,82 @@
+#!/bin/bash
+
+ABI_VERSION=1.8.5-HF7
+SUPPORTED_VERSION=1.8.5-HF6
+DATA_DIR=abiquo_upgrade_$ABI_VERSION
+YUM_DIR=/etc/yum.repos.d/
+YUM_REPO_CONF=abiquo_local_upgrade.repo
+LOG_FILE=upgrade.log
+uuencode=0
+binary=1
+
+function untar_payload()
+{
+	match=$(grep --text --line-number '^PAYLOAD:$' $0 | cut -d ':' -f 1)
+	payload_start=$((match + 1))
+	if [[ $binary -ne 0 ]]; then
+		tail -n +$payload_start $0 | tar -xzf -
+	fi
+	if [[ $uuencode -ne 0 ]]; then
+		tail -n +$payload_start $0 | uudecode | tar -xzf -
+	fi
+}
+
+if [ `whoami` != 'root' ]; then
+	echo run this script as root.
+	exit 1
+fi
+
+if [ -z "`grep $SUPPORTED_VERSION /etc/abiquo-release 2>/dev/null`" ]; then
+  echo Invalid Abiquo release found: `cat /etc/abiquo-release 2>/dev/null`
+  echo Aborting.
+  exit 1
+fi
+
+read -p "Upgrading to Abiquo $ABI_VERSION, continue (y/n)? " ans
+
+if [[ "${ans}" == 'y'  ||  "${ans}" == 'yes' ]]; then
+	echo -n "Extracting archive... "
+	untar_payload > $LOG_FILE 2>&1
+	# Do remainder of install steps.
+	if [ $? == 0 ]; then
+		echo "Done."
+	else
+		echo "Failed!"
+	fi
+
+  if [ "$1" == '--extract' ]; then
+    exit 0
+  fi
+
+	echo -n "Prepare the upgrade... "
+	/sbin/service abiquo-tomcat stop >> $LOG_FILE 2>&1
+	if [ $? == 0 ]; then
+		echo "Done."
+	else
+		echo "Failed!"
+	fi
+	
+	echo -n "Creating repos... "
+	cp $DATA_DIR/$YUM_REPO_CONF $YUM_DIR >> $LOG_FILE 2>&1
+	sed -i "s,REPOURL,/$PWD/$DATA_DIR," $YUM_DIR/$YUM_REPO_CONF >> $LOG_FILE 2>&1
+	if [ $? == 0 ]; then
+		echo "Done."
+	else
+		echo "Failed!"
+	fi
+
+	echo -n "Upgrading packages... "
+	yum upgrade -y --disablerepo='*' --enablerepo='abiquo-local-upgrade' >> $LOG_FILE 2>&1
+	if [ $? == 0 ]; then
+		echo "Done."
+	else
+		echo "Failed!"
+	fi
+
+	echo -n "Cleaning up... "
+	rm $YUM_DIR/$YUM_REPO_CONF >> $LOG_FILE 2>&1
+	rm -rf $DATA_DIR >> $LOG_FILE 2>&1
+	echo "Done."
+fi
+
+exit 0

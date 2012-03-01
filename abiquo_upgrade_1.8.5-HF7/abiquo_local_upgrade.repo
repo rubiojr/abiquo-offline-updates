@@ -1,0 +1,5 @@
+[abiquo-local-upgrade]
+name = abiquo-local-upgrade
+baseurl = file:///REPOURL
+gpgkey = file:///etc/pki/rpm-gpg/RPM-GPG-KEY-Abiquo
+gpgcheck = 1
